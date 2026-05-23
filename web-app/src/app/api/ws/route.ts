@@ -14,6 +14,9 @@ export async function POST(request: Request) {
     const action = body.action;
 
     if (action === 'start') {
+      if (body.coin) {
+        wsManager.setCoin(body.coin.toUpperCase());
+      }
       wsManager.start();
       return NextResponse.json({ success: true, status: wsManager.getStatus() });
     } else if (action === 'stop') {

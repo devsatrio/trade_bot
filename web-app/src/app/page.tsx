@@ -190,7 +190,7 @@ export default function Dashboard() {
     const action = wsStatus === "connected" ? "stop" : "start";
     setWsStatus(action === "start" ? "connecting" : "disconnected");
     try {
-      const res = await fetch("/api/ws", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const res = await fetch("/api/ws", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, coin: activeCoin }) });
       const data = await res.json();
       setWsStatus(data.status);
     } catch (err) { console.error(err); }
@@ -199,6 +199,17 @@ export default function Dashboard() {
   const tradeUsd = parseFloat(botSettings.max_position_size || "100");
   const leverage = botSettings.leverage || "1";
   const activeCoin = botSettings.active_coin || "BTC";
+
+  // Sync WS coin when activeCoin changes or on initial load
+  useEffect(() => {
+    if (activeCoin) {
+      fetch("/api/ws", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setCoin", coin: activeCoin })
+      }).catch(console.error);
+    }
+  }, [activeCoin]);
 
   const executeTrade = async (side: string) => {
     if (currentPrice === 0) { addToast("Menunggu harga live...", "error"); return; }
