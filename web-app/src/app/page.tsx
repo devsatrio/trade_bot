@@ -100,20 +100,15 @@ export default function Dashboard() {
           const lastPrice = dataChart.data[dataChart.data.length - 1].price;
           if (lastPrice > 0) setCurrentPrice(lastPrice);
         } else {
-          // Fallback to Hyperliquid API if local chart data is empty
-          const resMeta = await fetch("https://api.hyperliquid.xyz/info", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type: "allMids" })
-          });
-          const mids = await resMeta.json();
-          if (mids?.["BTC"]) setCurrentPrice(parseFloat(mids["BTC"]));
+          // Fallback to loading state if local chart data is empty
+          setCurrentPrice(0);
         }
       } catch (e) {}
     };
     fetchPrice();
     const interval = setInterval(fetchPrice, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeCoin]);
 
   // Data Polling (Status, Trades, Balance)
   useEffect(() => {
@@ -203,6 +198,7 @@ export default function Dashboard() {
   // Sync WS coin when activeCoin changes or on initial load
   useEffect(() => {
     if (activeCoin) {
+      setCurrentPrice(0); // Reset harga menjadi 0 (loading) saat koin berubah
       fetch("/api/ws", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

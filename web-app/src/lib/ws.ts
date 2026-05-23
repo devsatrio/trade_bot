@@ -15,6 +15,7 @@ class HyperliquidWS {
   private isConnecting: boolean = false;
   private coin: string = "BTC";
   private engineUrl: string = process.env.ENGINE_URL || "http://engine:8000";
+  private lastEngineSendTime: number = 0;
 
   public priceHistory: ChartDataPoint[] = [];
   public candlesCollected: number = 0;
@@ -84,8 +85,12 @@ class HyperliquidWS {
               timestamp: Date.now()
             };
 
-            // Kirim ke FastAPI secara asinkron
-            this.sendToEngine(marketData);
+            // Kirim ke FastAPI secara asinkron dengan batasan waktu (throttle) max 1x per detik
+            const currentTime = Date.now();
+            if (currentTime - this.lastEngineSendTime > 1000) {
+              this.lastEngineSendTime = currentTime;
+              this.sendToEngine(marketData);
+            }
           }
         }
       } catch (err) {
