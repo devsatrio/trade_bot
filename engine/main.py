@@ -982,10 +982,11 @@ def send_positions_report(token, chat_id):
                 price_str = "Loading..."
                 
             size_usd = size * entry_price
+            base_coin = symbol.split('/')[0] if '/' in symbol else symbol
             msg += (
                 f"{idx}. 🪙 <b>{symbol}</b> ({mode})\n"
                 f"↕️ <b>Side:</b> {side_emoji}\n"
-                f"📦 <b>Size:</b> ${size_usd:,.2f} USD ({size} BTC)\n"
+                f"📦 <b>Size:</b> ${size_usd:,.2f} USD ({size} {base_coin})\n"
                 f"📥 <b>Entry:</b> ${entry_price:,.2f}\n"
                 f"🏷️ <b>Price:</b> {price_str}"
                 f"{pnl_str}\n"

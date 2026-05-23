@@ -78,7 +78,7 @@ class HyperliquidWS {
 
             // Format data untuk dikirim ke FastAPI Engine
             const marketData = {
-              symbol: this.coin,
+              symbol: msg.data.coin || this.coin,
               price: midPrice,
               volume: volume,
               timestamp: Date.now()
