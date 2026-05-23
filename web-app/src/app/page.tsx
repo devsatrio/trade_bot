@@ -85,6 +85,10 @@ export default function Dashboard() {
     }
   };
 
+  const tradeUsd = parseFloat(botSettings.max_position_size || "100");
+  const leverage = botSettings.leverage || "1";
+  const activeCoin = botSettings.active_coin || "BTC";
+
   // Live Price Polling (Faster)
   useEffect(() => {
     const fetchPrice = async () => {
@@ -190,10 +194,6 @@ export default function Dashboard() {
       setWsStatus(data.status);
     } catch (err) { console.error(err); }
   };
-
-  const tradeUsd = parseFloat(botSettings.max_position_size || "100");
-  const leverage = botSettings.leverage || "1";
-  const activeCoin = botSettings.active_coin || "BTC";
 
   // Sync WS coin when activeCoin changes or on initial load
   useEffect(() => {
