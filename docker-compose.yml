@@ -11,6 +11,7 @@ services:
       - ./web-app:/app
       - /app/node_modules
       - /app/.next
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DATABASE_URL=/app/data/trading_bot.db
       - ENGINE_URL=http://engine:8000

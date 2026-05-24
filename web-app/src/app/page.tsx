@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { 
   Settings, Activity, TrendingUp, TrendingDown, 
   Wallet, Zap, LayoutDashboard, History, ArrowUpRight, ArrowDownLeft,
-  BarChart3, Lock
+  BarChart3, Lock, Terminal
 } from "lucide-react";
 import Link from "next/link";
 
@@ -342,6 +342,10 @@ export default function Dashboard() {
           <Link href="/analysis" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
             <BarChart3 className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Analisa</span>}
+          </Link>
+          <Link href="/terminal" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden font-sans">
+            <Terminal className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="whitespace-nowrap">Terminal & Logs</span>}
           </Link>
           <Link href="/settings" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
             <Settings className="w-4 h-4 shrink-0" />

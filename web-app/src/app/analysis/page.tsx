@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { 
   Settings, LayoutDashboard, BarChart3, Filter, 
   Calendar, Zap, TrendingUp, TrendingDown, RefreshCw, 
-  Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronRight, Lock
+  Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronRight, Lock, Terminal
 } from "lucide-react";
 import Link from "next/link";
 
@@ -131,6 +131,10 @@ export default function AnalysisPage() {
             <BarChart3 className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Analisa</span>}
           </div>
+          <Link href="/terminal" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden font-sans">
+            <Terminal className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="whitespace-nowrap">Terminal & Logs</span>}
+          </Link>
           <Link href="/settings" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
             <Settings className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Settings</span>}
