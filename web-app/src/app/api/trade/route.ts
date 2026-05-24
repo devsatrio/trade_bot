@@ -1,28 +1,52 @@
 import { NextResponse } from 'next/server';
 import { privateKeyToAccount } from 'viem/accounts';
-import { keccak256, toHex } from 'viem';
+import { ExchangeClient, HttpTransport } from '@nktkas/hyperliquid';
 const ENGINE_URL = process.env.ENGINE_URL || 'http://engine:8000';
 
-// Hyperliquid asset index map (top perpetuals, verified from HL meta)
-const HL_ASSET_INDEX: Record<string, number> = {
-  BTC: 0, ETH: 1, ATOM: 2, LINK: 3, ARB: 4, BNB: 5, SOL: 6,
-  AVAX: 7, MATIC: 8, ADA: 9, DOGE: 10, OP: 11, APT: 12, SUI: 13,
-  TRX: 14, XRP: 15, LTC: 16, BCH: 17, FIL: 18, UNI: 19,
-};
+interface CoinMeta {
+  index: number;
+  szDecimals: number;
+}
 
-async function getCoinAssetIndex(coin: string): Promise<number> {
+async function getCoinMetadata(coin: string, isTestnet: boolean): Promise<CoinMeta> {
   const upper = coin.toUpperCase();
-  if (HL_ASSET_INDEX[upper] !== undefined) return HL_ASSET_INDEX[upper];
-  // Fallback: fetch from Hyperliquid meta
   try {
-    const isTestnet = process.env.IS_TESTNET === 'true';
     const apiUrl = isTestnet ? 'https://api.hyperliquid-testnet.xyz/info' : 'https://api.hyperliquid.xyz/info';
-    const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'meta' }) });
+    const res = await fetch(apiUrl, { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ type: 'meta' }) 
+    });
     const meta = await res.json();
     const idx = meta?.universe?.findIndex((u: any) => u.name === upper);
-    if (idx !== undefined && idx >= 0) return idx;
-  } catch (_) {}
-  return 0; // Default to BTC
+    if (idx !== undefined && idx >= 0) {
+      const szDecimals = meta.universe[idx].szDecimals ?? 5;
+      return { index: idx, szDecimals };
+    }
+  } catch (e: any) {
+    console.error("[Trade API] Error fetching coin metadata:", e.message);
+  }
+  
+  // Fallbacks in case of API failure
+  if (upper === 'BTC') return { index: 0, szDecimals: 5 };
+  if (upper === 'ETH') return { index: 1, szDecimals: 4 };
+  return { index: 0, szDecimals: 5 }; // Fallback to BTC
+}
+
+function formatPrice(price: number, szDecimals: number): string {
+  // Rule 1: Limit to 5 significant figures
+  let formatted = Number(price.toPrecision(5));
+  
+  // Rule 2: Limit decimal places to (6 - szDecimals) for perpetuals
+  const maxDecimals = Math.max(0, 6 - szDecimals);
+  
+  // Get current number of decimal places of the formatted number
+  const parts = formatted.toString().split('.');
+  if (parts.length > 1 && parts[1].length > maxDecimals) {
+    formatted = Number(formatted.toFixed(maxDecimals));
+  }
+  
+  return formatted.toString();
 }
 
 export async function POST(request: Request) {
@@ -31,9 +55,6 @@ export async function POST(request: Request) {
     const { side, size, price, network, reduceOnly } = body;
 
     const isTestnet = network === "mainnet" ? false : true;
-    const apiUrl = isTestnet 
-      ? 'https://api.hyperliquid-testnet.xyz/exchange' 
-      : 'https://api.hyperliquid.xyz/exchange';
 
     // Pilih Secret berdasarkan Network
     const envSecret = isTestnet ? process.env.TESTNET_AGENT_SECRET : process.env.MAINNET_AGENT_SECRET;
@@ -78,133 +99,78 @@ export async function POST(request: Request) {
     // FETCH SETTINGS TO GET USER CONFIGURED LEVERAGE + ACTIVE COIN
     let leverage = 1;
     let activeCoin = (body.symbol || "BTC/USD").split("/")[0].toUpperCase();
+    let mainWalletAddress: `0x${string}` | undefined = undefined;
+    
     try {
       const settingsRes = await fetch(`${process.env.ENGINE_URL || 'http://engine:8000'}/settings`);
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json();
         leverage = parseInt(settingsData.leverage || "1", 10);
         if (settingsData.active_coin) activeCoin = settingsData.active_coin.toUpperCase();
+        if (settingsData.wallet_address) mainWalletAddress = settingsData.wallet_address as `0x${string}`;
       }
     } catch (e: any) {
       console.error("[Trade API] Gagal mengambil leverage dari settings, default ke 1:", e.message);
     }
 
-    const assetIndex = await getCoinAssetIndex(activeCoin);
-    console.log(`[Trade API] Coin: ${activeCoin}, Asset Index: ${assetIndex}`);
+    const { index: assetIndex, szDecimals } = await getCoinMetadata(activeCoin, isTestnet);
+    console.log(`[Trade API] Coin: ${activeCoin}, Asset Index: ${assetIndex}, Size Decimals: ${szDecimals}, Main Wallet: ${mainWalletAddress}`);
+
+    const transport = new HttpTransport({ isTestnet: isTestnet });
+    const exchange = new ExchangeClient({ 
+      transport, 
+      wallet: account, 
+      isTestnet: isTestnet
+    });
 
     // UPDATE LEVERAGE ON HYPERLIQUID
     try {
-      const leverageAction = {
-        type: "updateLeverage",
+      console.log(`[Trade API] Mengirim Request Update Leverage (${leverage}x)`);
+      const levRes = await exchange.updateLeverage({
         asset: assetIndex,
         isCross: true,
         leverage: leverage
-      };
-
-      const leverageNonce = Date.now();
-      const leverageActionHash = keccak256(toHex(JSON.stringify(leverageAction)));
-
-      const leverageSigHex = await account.signTypedData({
-        domain: { name: "Exchange", version: "1", chainId: 1337 }, 
-        types: {
-          Agent: [
-            { name: "source", type: "string" },
-            { name: "connectionId", type: "bytes32" }
-          ]
-        },
-        primaryType: "Agent",
-        message: {
-          source: "hyperliquid",
-          connectionId: leverageActionHash
-        }
-      } as any);
-
-      const [lv, lr, ls] = [
-        parseInt(leverageSigHex.slice(130), 16),
-        leverageSigHex.slice(0, 66),
-        "0x" + leverageSigHex.slice(66, 130)
-      ];
-
-      const leveragePayload = {
-        action: leverageAction,
-        nonce: leverageNonce,
-        signature: { r: lr, s: ls, v: lv }
-      };
-
-      console.log(`[Trade API] Mengirim Payload Update Leverage (${leverage}x):`, JSON.stringify(leveragePayload));
-      const levRes = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(leveragePayload)
       });
-      const levData = await levRes.json();
-      console.log("[Trade API] Respon Update Leverage:", JSON.stringify(levData));
+      console.log("[Trade API] Respon Update Leverage:", JSON.stringify(levRes));
+      if (levRes.status === "err") {
+        console.warn("[Trade API] Leverage update error (non-fatal):", levRes.response);
+      }
     } catch (levError: any) {
       console.error("[Trade API] Error mengupdate leverage di Hyperliquid:", levError.message);
     }
 
-    // 2. CONSTRUCT ACTION PAYLOAD
-    const action = {
-      type: "order",
-      orders: [{
-        a: assetIndex,
-        b: side === 'LONG', 
-        p: String(price),
-        s: String(size),
-        r: reduceOnly ? true : false,
-        t: { limit: { tif: "Gtc" } }
-      }],
-      grouping: "na"
-    };
+    const formattedPrice = formatPrice(parseFloat(String(price)), szDecimals);
+    const formattedSize = Number(parseFloat(String(size)).toFixed(szDecimals)).toString();
 
-    const nonce = Date.now();
-    
-    // Hash the action to get a bytes32 connectionId
-    const actionHash = keccak256(toHex(JSON.stringify(action)));
+    let responseData;
+    // KIRIM REQUEST ORDER KE HYPERLIQUID EXCHANGE
+    try {
+      console.log(`[Trade API] Mengirim Order: ${side} ${formattedSize} @ ${formattedPrice}`);
+      responseData = await exchange.order({
+        orders: [{
+          a: assetIndex,
+          b: side === 'LONG', 
+          p: formattedPrice,
+          s: formattedSize,
+          r: reduceOnly ? true : false,
+          t: { limit: { tif: "Gtc" } }
+        }],
+        grouping: "na"
+      });
+      console.log("[Trade API] Response dari HL:", JSON.stringify(responseData));
 
-    // 3. EIP-712 MANUAL SIGNING VIA VIEM
-    const signatureHex = await account.signTypedData({
-      domain: { name: "Exchange", version: "1", chainId: 1337 }, 
-      types: {
-        Agent: [
-          { name: "source", type: "string" },
-          { name: "connectionId", type: "bytes32" }
-        ]
-      },
-      primaryType: "Agent",
-      message: {
-        source: "hyperliquid",
-        connectionId: actionHash
+      if (responseData.status === "err") {
+        return NextResponse.json({
+          success: false,
+          error: typeof responseData.response === 'string' ? responseData.response : JSON.stringify(responseData.response),
+          network: isTestnet ? "testnet" : "mainnet"
+        }, { status: 400 });
       }
-    } as any);
-
-    const [v, r, s] = [
-      parseInt(signatureHex.slice(130), 16),
-      signatureHex.slice(0, 66),
-      "0x" + signatureHex.slice(66, 130)
-    ];
-
-    const payload = {
-      action,
-      nonce,
-      signature: { r, s, v }
-    };
-
-    // 4. KIRIM REQUEST KE HYPERLIQUID EXCHANGE
-    console.log("[Trade API] Mengirim Payload:", JSON.stringify(payload));
-    
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const responseData = await res.json();
-    
-    if (responseData.status === "err") {
+    } catch (orderError: any) {
+      console.error("[Trade API] Error saat mengirim order:", orderError.message);
       return NextResponse.json({
         success: false,
-        error: responseData.response,
+        error: orderError.message || "Gagal mengirim order ke Hyperliquid",
         network: isTestnet ? "testnet" : "mainnet"
       }, { status: 400 });
     }

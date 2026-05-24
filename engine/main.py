@@ -724,46 +724,6 @@ def get_all_trades():
         if 'conn' in locals():
             conn.close()
 
-@app.get("/trades/{trade_id}")
-def get_trade_by_id(trade_id: int):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
-        row = cursor.fetchone()
-        return dict(row)
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
-@app.get("/signals/latest")
-def get_latest_signal():
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM signals ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        if not row:
-            return {"success": False, "message": "No signals found"}
-        row_dict = dict(row)
-        try:
-            import json
-            row_dict["metadata"] = json.loads(row_dict.get("metadata") or "{}")
-        except:
-            row_dict["metadata"] = {}
-        return {"success": True, "signal": row_dict}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
 class LogLiveTradeData(BaseModel):
     symbol: str
     side: str
@@ -857,6 +817,48 @@ def log_live_trade(data: LogLiveTradeData):
     finally:
         if 'conn' in locals():
             conn.close()
+
+@app.get("/trades/{trade_id}")
+def get_trade_by_id(trade_id: int):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
+        row = cursor.fetchone()
+        return dict(row)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@app.get("/signals/latest")
+def get_latest_signal():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM signals ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if not row:
+            return {"success": False, "message": "No signals found"}
+        row_dict = dict(row)
+        try:
+            import json
+            row_dict["metadata"] = json.loads(row_dict.get("metadata") or "{}")
+        except:
+            row_dict["metadata"] = {}
+        return {"success": True, "signal": row_dict}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+
 
 @app.get("/settings")
 def get_settings():

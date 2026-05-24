@@ -256,8 +256,12 @@ export default function Dashboard() {
         });
         const closeData = await closeRes.json();
         if (!closeData.success) {
-          addToast(`Gagal tutup L1: ${closeData.error}`, "error");
-          return;
+          if (closeData.error && closeData.error.includes("Reduce only order would increase position")) {
+            addToast("Posisi tidak ditemukan di L1 (sudah ditutup/tidak terisi). Menyelaraskan database...", "info");
+          } else {
+            addToast(`Gagal tutup L1: ${closeData.error}`, "error");
+            return;
+          }
         }
       }
 
@@ -512,16 +516,22 @@ export default function Dashboard() {
                     <button 
                       onClick={async () => { 
                         try {
-                          const res = await fetch("/api/trade", { 
+                          addToast("Menguji koneksi API...", "info");
+                          const res = await fetch("/api/test-api", { 
                             method: "POST", 
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ side: "LONG", size: 0.0001, price: currentPrice || 60000, network: botSettings.network || "testnet" }) 
+                            body: JSON.stringify({ 
+                              network: botSettings.network || "testnet" 
+                            }) 
                           }); 
                           const data = await res.json(); 
-                          if (data.success) addToast(`API OK: ${data.address}`, "success");
-                          else addToast(`API Error: ${data.error || "Unknown"}`, "error");
+                          if (data.success) {
+                            addToast(data.message, "success");
+                          } else {
+                            addToast(`API Error: ${data.error || "Gagal menguji API Key"}`, "error");
+                          }
                         } catch (e) {
-                          addToast("Koneksi API Gagal", "error");
+                          addToast("Koneksi API Gagal menghubungkan ke server", "error");
                         }
                       }} 
                       className="py-1.5 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600 rounded-md text-xs font-bold transition-all"
