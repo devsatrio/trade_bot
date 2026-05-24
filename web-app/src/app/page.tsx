@@ -629,7 +629,7 @@ export default function Dashboard() {
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <div className="flex flex-col">
                           <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Entry Price</span>
-                          <span className="text-xs text-slate-300 font-mono">${entryPrice.toLocaleString()}</span>
+                          <span className="text-xs text-slate-300 font-mono">${entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
                           {trade.fee > 0 && <span className="text-[8px] text-slate-600 italic block">Fee: ${trade.fee.toFixed(3)}</span>}
                           {trade.funding_fee !== undefined && trade.funding_fee !== 0 && (
                             <span className={`text-[8px] italic block ${trade.funding_fee > 0 ? "text-rose-400/80" : "text-emerald-400/80"}`}>

@@ -135,7 +135,7 @@ export async function POST(request: Request) {
         leverage: leverage
       });
       console.log("[Trade API] Respon Update Leverage:", JSON.stringify(levRes));
-      if (levRes.status === "err") {
+      if ((levRes as any).status === "err") {
         console.warn("[Trade API] Leverage update error (non-fatal):", levRes.response);
       }
     } catch (levError: any) {
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
       });
       console.log("[Trade API] Response dari HL:", JSON.stringify(responseData));
 
-      if (responseData.status === "err") {
+      if ((responseData as any).status === "err") {
         return NextResponse.json({
           success: false,
           error: typeof responseData.response === 'string' ? responseData.response : JSON.stringify(responseData.response),
@@ -181,6 +181,8 @@ export async function POST(request: Request) {
     // LOG KE DATABASE LOKAL VIA FASTAPI ENGINE KECUALI JIKA HANYA MENUTUP POSISI (REDUCE ONLY)
     if (!reduceOnly) {
       try {
+        const statusObj = (responseData.response?.data?.statuses?.[0]) as any;
+        const oid = statusObj?.resting?.oid?.toString() || statusObj?.filled?.oid?.toString() || "LIVE_TRADE";
         const logRes = await fetch(`${ENGINE_URL}/trades/log-live`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -189,7 +191,7 @@ export async function POST(request: Request) {
             side: side,
             price: parseFloat(price),
             size: parseFloat(size),
-            tx_hash: responseData.response?.data?.statuses?.[0]?.resting?.oid?.toString() || "LIVE_TRADE",
+            tx_hash: oid,
             leverage: leverage
           })
         });

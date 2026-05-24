@@ -297,7 +297,9 @@ export default function AnalysisPage() {
                               {trade.close_price && <span className="text-[10px] text-slate-500">${trade.close_price.toLocaleString()}</span>}
                             </div>
                           </td>
-                          <td className="p-4 text-xs font-bold text-slate-400">{trade.size} BTC</td>
+                          <td className="p-4 text-xs font-bold text-slate-400">
+                            {trade.size} {trade.symbol ? trade.symbol.split('/')[0] : 'BTC'}
+                          </td>
                           <td className="p-4">
                             <div className="flex flex-col">
                               <span className={`text-xs font-black ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
