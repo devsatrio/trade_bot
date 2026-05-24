@@ -326,7 +326,7 @@ export default function TerminalPage() {
       </aside>
 
       {/* Main Panel */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950/40">
+      <main className="flex-1 flex flex-col h-full overflow-hidden pb-16 md:pb-0 bg-slate-950/40">
         <header className="glass-panel border-x-0 border-t-0 p-3 px-6 flex items-center justify-between z-20">
           <div className="flex items-center gap-2">
             <Terminal className="w-5 h-5 text-indigo-400" />

@@ -381,7 +381,7 @@ export default function Dashboard() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col h-full overflow-y-auto relative">
+      <main className="flex-1 flex flex-col h-full overflow-y-auto pb-24 md:pb-0 relative">
         <header className="glass-panel border-x-0 border-t-0 p-3 px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4">
             <h2 className="text-base font-semibold text-slate-200">Market Overview</h2>
@@ -427,7 +427,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <div className="p-4 space-y-4 max-w-[1600px] mx-auto w-full h-full flex flex-col">
+        <div className="p-4 space-y-4 max-w-[1600px] mx-auto w-full h-auto xl:h-full flex flex-col">
           {error && <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">{error}</div>}
 
           {/* Stats & Controls */}

@@ -221,7 +221,7 @@ export default function SettingsPage() {
         </button>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-y-auto">
+      <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
         <header className="glass-panel border-x-0 border-t-0 p-3 px-6 flex items-center justify-between sticky top-0 z-20">
           <h2 className="text-base font-semibold text-slate-200">Bot Settings</h2>
           <div className="flex items-center gap-3">
