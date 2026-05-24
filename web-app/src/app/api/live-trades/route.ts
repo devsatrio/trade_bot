@@ -47,7 +47,7 @@ export async function POST(request: Request) {
           size: fill.sz,
           timestamp: new Date(fill.time).toISOString(),
           status: "CLOSED",
-          pnl: fill.pnl,
+          pnl: fill.closedPnl,
           fee: parseFloat(fill.fee || "0"),
           leverage: 1 // fallback
         }));

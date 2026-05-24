@@ -1098,6 +1098,50 @@ def close_all_open_positions(token, chat_id):
         settings = {row["key"]: row["value"] for row in cursor.fetchall()}
         conn.close() # Close immediately to release lock!
         
+        # Check live positions on exchange if in live mode
+        execution_mode = settings.get("execution_mode", "paper")
+        wallet = settings.get("wallet_address")
+        network = settings.get("network", "testnet")
+        
+        if execution_mode == "live" and wallet:
+            try:
+                import requests
+                api_url = 'https://api.hyperliquid-testnet.xyz/info' if network == 'testnet' else 'https://api.hyperliquid.xyz/info'
+                res = requests.post(api_url, json={'type': 'clearinghouseState', 'user': wallet}, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    for p in data.get('assetPositions', []):
+                        pos = p.get('position', {})
+                        szi = float(pos.get('szi', 0))
+                        if szi != 0:
+                            coin = pos.get('coin')
+                            symbol = f"{coin}/USD"
+                            side = "LONG" if szi > 0 else "SHORT"
+                            size = abs(szi)
+                            entry_px = float(pos.get('entryPx', 0))
+                            lev = int(pos.get('leverage', {}).get('value', 1))
+                            
+                            # Check if this coin is already in open_trades
+                            already_in_db = False
+                            for t in open_trades:
+                                if t['symbol'].upper() == symbol.upper() and t['mode'] == 'live':
+                                    already_in_db = True
+                                    break
+                                    
+                            if not already_in_db:
+                                # Add synthetic trade to open_trades
+                                open_trades.append({
+                                    'id': 0, # Synthetic ID
+                                    'symbol': symbol,
+                                    'side': side,
+                                    'price': entry_px,
+                                    'size': size,
+                                    'mode': 'live',
+                                    'leverage': lev
+                                })
+            except Exception as e:
+                print(f"Error fetching live positions from exchange: {e}")
+                
         if not open_trades:
             send_telegram_reply(token, chat_id, "ℹ️ <b>Tidak ada posisi aktif yang terbuka untuk ditutup.</b>")
             return
@@ -1147,7 +1191,6 @@ def close_all_open_positions(token, chat_id):
                     
                     # 1. Close on Hyperliquid L1
                     counter_side = "SHORT" if side == "LONG" else "LONG"
-                    network = settings.get("network", "testnet")
                     
                     close_l1_res = requests.post(
                         "http://web-app:3000/api/trade",
@@ -1181,27 +1224,36 @@ def close_all_open_positions(token, chat_id):
                         closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal close L1 ({detail_msg})\n")
                         continue
                         
-                    # 2. Call Engine paper-close via web-app to update local DB and send Telegram notification
-                    res = requests.post(
-                        "http://web-app:3000/api/paper-close",
-                        json={"trade_id": trade_id, "close_price": close_price},
-                        headers=headers,
-                        timeout=20
-                    )
-                    if res.status_code == 200:
+                    # 2. Call Engine paper-close via web-app to update local DB (only if trade_id > 0)
+                    if trade_id > 0:
+                        res = requests.post(
+                            "http://web-app:3000/api/paper-close",
+                            json={"trade_id": trade_id, "close_price": close_price},
+                            headers=headers,
+                            timeout=20
+                        )
+                        if res.status_code == 200:
+                            closed_details.append(
+                                f"🪙 <b>{symbol}</b> (LIVE {side})\n"
+                                f"📥 Entry: ${entry_price:,.2f} | 📤 Close: ${close_price:,.2f}\n"
+                                f"{pnl_emoji} PnL: ${pnl:+,.2f} ({pnl_pct:+,.2f}%)\n"
+                            )
+                            total_pnl += pnl
+                        else:
+                            detail_msg = "Error"
+                            try:
+                                detail_msg = res.json().get('detail', 'Error')
+                            except:
+                                pass
+                            closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal update DB ({detail_msg})\n")
+                    else:
+                        # Synthetic trade closed successfully
                         closed_details.append(
-                            f"🪙 <b>{symbol}</b> (LIVE {side})\n"
+                            f"🪙 <b>{symbol}</b> (LIVE {side} - Untracked in DB)\n"
                             f"📥 Entry: ${entry_price:,.2f} | 📤 Close: ${close_price:,.2f}\n"
                             f"{pnl_emoji} PnL: ${pnl:+,.2f} ({pnl_pct:+,.2f}%)\n"
                         )
                         total_pnl += pnl
-                    else:
-                        detail_msg = "Error"
-                        try:
-                            detail_msg = res.json().get('detail', 'Error')
-                        except:
-                            pass
-                        closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal update DB ({detail_msg})\n")
                 except Exception as e:
                     closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Error koneksi ({str(e)})\n")
             else:
