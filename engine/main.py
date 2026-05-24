@@ -525,11 +525,15 @@ def execute_paper_trade(data: PaperTradeData):
         
         # Notify Telegram (Open)
         size_usd = data.size * data.price
+        strat_name = settings.get("strategy_type", "manual").upper()
         msg = f"🚀 <b>OPEN POSITION (PAPER)</b>\n\n" \
               f"🪙 <b>Symbol:</b> {data.symbol}\n" \
               f"↕️ <b>Side:</b> {data.side}\n" \
               f"💰 <b>Entry:</b> ${data.price:,.2f}\n" \
               f"📦 <b>Size:</b> ${size_usd:,.2f} USD ({data.size} {data.symbol.split('/')[0]})\n" \
+              f"💵 <b>Real Size (Margin):</b> ${margin:,.2f} USD (Leverage: {int(leverage)}x)\n" \
+              f"🧠 <b>Strategi:</b> {strat_name}\n" \
+              f"📊 <b>PnL:</b> 🟩 $0.00 (0.00%)\n" \
               f"⛽ <b>Gas Fee:</b> ${gas_fee:.4f}\n" \
               f"------------------------\n" \
               f"🎯 <b>TP:</b> ${tp_price:,.2f}\n" \
@@ -803,14 +807,50 @@ def validate_new_trade(symbol: str = "BTC/USD"):
 def log_live_trade(data: LogLiveTradeData):
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        
+        # Read settings to get SL/TP and strategy
+        cursor.execute("SELECT key, value FROM bot_settings")
+        settings = {row["key"]: row["value"] for row in cursor.fetchall()}
+        
+        strategy = settings.get("strategy_type", "manual")
+        stop_loss_usd = float(settings.get("stop_loss_usd", "10.0"))
+        take_profit_usd = float(settings.get("take_profit_usd", "20.0"))
+        
+        # Calculate SL/TP prices based on USD
+        if data.side == "LONG":
+            sl_price = data.price - (stop_loss_usd / data.size) if data.size > 0 else data.price
+            tp_price = data.price + (take_profit_usd / data.size) if data.size > 0 else data.price
+        else:
+            sl_price = data.price + (stop_loss_usd / data.size) if data.size > 0 else data.price
+            tp_price = data.price - (take_profit_usd / data.size) if data.size > 0 else data.price
+            
         cursor.execute(
             """INSERT INTO trades (symbol, side, price, size, tx_hash, status, fee, strategy, mode, leverage, timestamp) 
                VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, 'live', ?, datetime('now'))""",
-            (data.symbol, data.side, data.price, data.size, data.tx_hash, 0.01, "manual", data.leverage)
+            (data.symbol, data.side, data.price, data.size, data.tx_hash, 0.01, strategy, data.leverage)
         )
         trade_id = cursor.lastrowid
         conn.commit()
+        
+        # Notify Telegram (Open Live)
+        size_usd = data.size * data.price
+        margin = size_usd / data.leverage if data.leverage > 0 else size_usd
+        msg = f"🚀 <b>OPEN POSITION (LIVE)</b>\n\n" \
+              f"🪙 <b>Symbol:</b> {data.symbol}\n" \
+              f"↕️ <b>Side:</b> {data.side}\n" \
+              f"💰 <b>Entry:</b> ${data.price:,.2f}\n" \
+              f"📦 <b>Size:</b> ${size_usd:,.2f} USD ({data.size} {data.symbol.split('/')[0]})\n" \
+              f"💵 <b>Real Size (Margin):</b> ${margin:,.2f} USD (Leverage: {data.leverage}x)\n" \
+              f"🧠 <b>Strategi:</b> {strategy.upper()}\n" \
+              f"📊 <b>PnL:</b> 🟩 $0.00 (0.00%)\n" \
+              f"⛽ <b>Gas Fee:</b> $0.0100\n" \
+              f"------------------------\n" \
+              f"🎯 <b>TP:</b> ${tp_price:,.2f}\n" \
+              f"🛑 <b>SL:</b> ${sl_price:,.2f}"
+        send_telegram_notification(msg)
+        
         return {"success": True, "trade_id": trade_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1052,6 +1092,10 @@ def close_all_open_positions(token, chat_id):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
         open_trades = [dict(row) for row in cursor.fetchall()]
+        
+        # Read settings
+        cursor.execute("SELECT key, value FROM bot_settings")
+        settings = {row["key"]: row["value"] for row in cursor.fetchall()}
         conn.close() # Close immediately to release lock!
         
         if not open_trades:
@@ -1091,12 +1135,57 @@ def close_all_open_positions(token, chat_id):
             pnl_emoji = "🟩" if pnl >= 0 else "🟥"
             
             if trade_mode == "live":
-                # For live trades, we trigger the NextJS API close endpoint!
+                # For live trades, we must close it on the exchange via NextJS API first!
                 try:
                     import requests
+                    import os
+                    dashboard_password = os.environ.get("DASHBOARD_PASSWORD", "")
+                    headers = {
+                        "Content-Type": "application/json",
+                        "x-internal-secret": dashboard_password
+                    }
+                    
+                    # 1. Close on Hyperliquid L1
+                    counter_side = "SHORT" if side == "LONG" else "LONG"
+                    network = settings.get("network", "testnet")
+                    
+                    close_l1_res = requests.post(
+                        "http://web-app:3000/api/trade",
+                        json={
+                            "symbol": symbol,
+                            "side": counter_side,
+                            "size": size,
+                            "price": close_price,
+                            "network": network,
+                            "reduceOnly": True
+                        },
+                        headers=headers,
+                        timeout=20
+                    )
+                    
+                    l1_success = False
+                    detail_msg = "Error"
+                    if close_l1_res.status_code == 200:
+                        l1_data = close_l1_res.json()
+                        if l1_data.get("success"):
+                            l1_success = True
+                        else:
+                            detail_msg = l1_data.get("error", "Unknown error")
+                            if "Reduce only order would increase position" in detail_msg:
+                                # Safe to treat as success/already closed
+                                l1_success = True
+                    else:
+                        detail_msg = f"HTTP {close_l1_res.status_code}"
+                        
+                    if not l1_success:
+                        closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal close L1 ({detail_msg})\n")
+                        continue
+                        
+                    # 2. Call Engine paper-close via web-app to update local DB and send Telegram notification
                     res = requests.post(
                         "http://web-app:3000/api/paper-close",
                         json={"trade_id": trade_id, "close_price": close_price},
+                        headers=headers,
                         timeout=20
                     )
                     if res.status_code == 200:
@@ -1112,7 +1201,7 @@ def close_all_open_positions(token, chat_id):
                             detail_msg = res.json().get('detail', 'Error')
                         except:
                             pass
-                        closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal close API ({detail_msg})\n")
+                        closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Gagal update DB ({detail_msg})\n")
                 except Exception as e:
                     closed_details.append(f"❌ <b>{symbol}</b> (LIVE): Error koneksi ({str(e)})\n")
             else:
@@ -1342,12 +1431,37 @@ def funding_fee_calculation_loop():
                                         direction_str = "membayar" if hourly_cost > 0 else "menerima"
                                         action_emoji = "💸" if hourly_cost > 0 else "🎁"
                                         mode_label = "LIVE" if trade_mode == "live" else "PAPER"
+                                        
+                                        # Calculate rich details for the specific trade being funded
+                                        entry_price = float(trade["price"])
+                                        trade_leverage = float(trade.get("leverage") or 1.0)
+                                        trade_strategy = trade.get("strategy", "manual").upper()
+                                        acc_funding = float(trade.get("funding_fee") or 0.0)
+                                        total_acc_funding = acc_funding + hourly_cost
+                                        
+                                        if side == "LONG":
+                                            trade_pnl = (mark_price - entry_price) * size
+                                        else:
+                                            trade_pnl = (entry_price - mark_price) * size
+                                        trade_pnl_pct = (trade_pnl / (size * entry_price)) * 100 * trade_leverage if entry_price > 0 else 0.0
+                                        trade_pnl_emoji = "🟩" if trade_pnl >= 0 else "🟥"
+                                        trade_pnl_str = f"{trade_pnl_emoji} ${trade_pnl:+,.2f} ({trade_pnl_pct:+,.2f}%)"
+                                        
+                                        trade_margin = (size * entry_price) / trade_leverage if trade_leverage > 0 else (size * entry_price)
+                                        
                                         telegram_msg = (
                                             f"{action_emoji} <b>PENDANAAN POSISI ({mode_label})</b>\n\n"
                                             f"🪙 <b>Symbol:</b> {symbol}\n"
-                                            f"↕️ <b>Side:</b> {side}\n"
+                                            f"↕️ <b>Side:</b> {side} ({int(trade_leverage)}x)\n"
+                                            f"🧠 <b>Strategi:</b> {trade_strategy}\n"
+                                            f"📦 <b>Size:</b> ${pos_value:,.2f} USD ({size} {coin})\n"
+                                            f"💵 <b>Real Size (Margin):</b> ${trade_margin:,.2f} USD\n"
+                                            f"💰 <b>Entry / Mark:</b> ${entry_price:,.2f} / ${mark_price:,.2f}\n"
+                                            f"📊 <b>PnL Saat Ini:</b> {trade_pnl_str}\n"
                                             f"📈 <b>Rate Jam Ini:</b> {funding_rate * 100:.6f}%\n"
-                                            f"📊 <b>Detail:</b> Anda {direction_str} sebesar <b>${abs(hourly_cost):,.4f}</b>"
+                                            f"------------------------\n"
+                                            f"💸 <b>Biaya Jam Ini:</b> {direction_str} sebesar <b>${abs(hourly_cost):,.4f}</b>\n"
+                                            f"🔋 <b>Total Akumulasi Pendanaan:</b> ${total_acc_funding:+,.4f} USD"
                                         )
                                         send_telegram_notification(telegram_msg)
                                 else:

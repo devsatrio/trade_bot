@@ -175,29 +175,31 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // LOG KE DATABASE LOKAL VIA FASTAPI ENGINE
-    try {
-      const logRes = await fetch(`${ENGINE_URL}/trades/log-live`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: body.symbol || "BTC/USD",
-          side: side,
-          price: parseFloat(price),
-          size: parseFloat(size),
-          tx_hash: responseData.response?.data?.statuses?.[0]?.resting?.oid?.toString() || "LIVE_TRADE",
-          leverage: leverage
-        })
-      });
-      if (logRes.ok) {
-        const logData = await logRes.json();
-        console.log("[Trade API] Live trade logged via engine, ID:", logData.trade_id);
-      } else {
-        const logText = await logRes.text();
-        console.error("[Trade API] Engine gagal menyimpan log live trade:", logText);
+    // LOG KE DATABASE LOKAL VIA FASTAPI ENGINE KECUALI JIKA HANYA MENUTUP POSISI (REDUCE ONLY)
+    if (!reduceOnly) {
+      try {
+        const logRes = await fetch(`${ENGINE_URL}/trades/log-live`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: body.symbol || "BTC/USD",
+            side: side,
+            price: parseFloat(price),
+            size: parseFloat(size),
+            tx_hash: responseData.response?.data?.statuses?.[0]?.resting?.oid?.toString() || "LIVE_TRADE",
+            leverage: leverage
+          })
+        });
+        if (logRes.ok) {
+          const logData = await logRes.json();
+          console.log("[Trade API] Live trade logged via engine, ID:", logData.trade_id);
+        } else {
+          const logText = await logRes.text();
+          console.error("[Trade API] Engine gagal menyimpan log live trade:", logText);
+        }
+      } catch(e: any) {
+        console.error("[Trade API] Gagal menyimpan log live trade ke database:", e.message);
       }
-    } catch(e: any) {
-      console.error("[Trade API] Gagal menyimpan log live trade ke database:", e.message);
     }
     
     return NextResponse.json({

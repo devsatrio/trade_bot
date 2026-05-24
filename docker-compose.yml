@@ -33,6 +33,8 @@ services:
       - ./engine:/app
     environment:
       - DATABASE_URL=/app/data/trading_bot.db
+    env_file:
+      - ./web-app/.env
     networks:
       - bot-network
     restart: unless-stopped
