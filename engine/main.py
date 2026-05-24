@@ -1130,7 +1130,7 @@ def close_all_open_positions(token, chat_id):
             else:  # SHORT
                 pnl = (entry_price - close_price) * size
                 
-            trade_leverage = int(trade.get('leverage') or 1)
+            trade_leverage = int(float(trade.get('leverage') or 1))
             pnl_pct = (pnl / (entry_price * size)) * 100 * trade_leverage if (entry_price * size) > 0 else 0.0
             pnl_emoji = "🟩" if pnl >= 0 else "🟥"
             

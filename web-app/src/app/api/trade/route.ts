@@ -106,7 +106,10 @@ export async function POST(request: Request) {
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json();
         leverage = parseInt(settingsData.leverage || "1", 10);
-        if (settingsData.active_coin) activeCoin = settingsData.active_coin.toUpperCase();
+        // Only overwrite activeCoin if body.symbol was NOT provided
+        if (!body.symbol && settingsData.active_coin) {
+          activeCoin = settingsData.active_coin.toUpperCase();
+        }
         if (settingsData.wallet_address) mainWalletAddress = settingsData.wallet_address as `0x${string}`;
       }
     } catch (e: any) {

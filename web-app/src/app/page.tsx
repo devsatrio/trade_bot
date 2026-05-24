@@ -617,7 +617,7 @@ export default function Dashboard() {
                   }
 
                   return (
-                    <div key={trade.id || i} className={`p-3 rounded-xl border transition-all ${isOpen ? "bg-slate-800/80 border-indigo-500/30 shadow-[0_4px_12px_rgba(79,70,229,0.1)]" : "bg-slate-900/40 border-slate-800/50 opacity-80"}`}>
+                    <div key={`${trade.id || 'trade'}-${i}`} className={`p-3 rounded-xl border transition-all ${isOpen ? "bg-slate-800/80 border-indigo-500/30 shadow-[0_4px_12px_rgba(79,70,229,0.1)]" : "bg-slate-900/40 border-slate-800/50 opacity-80"}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${trade.side === "LONG" ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>{trade.side}</span>

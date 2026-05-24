@@ -39,8 +39,8 @@ export async function POST(request: Request) {
 
       if (res.ok) {
         const data = await res.json();
-        closedTrades = (data || []).map((fill: any) => ({
-          id: fill.hash,
+        closedTrades = (data || []).map((fill: any, index: number) => ({
+          id: `${fill.hash}-${index}`,
           symbol: fill.coin.includes("/USD") ? fill.coin : fill.coin + "/USD", // Normalise to symbol/USD format
           side: fill.side === "B" ? "LONG" : "SHORT",
           price: fill.px,
