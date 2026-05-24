@@ -351,7 +351,7 @@ export default function TerminalPage() {
           </div>
         </header>
 
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-6 gap-6">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden p-6 gap-6 pb-24 lg:pb-6">
           {/* Left panel: Containers list & Control */}
           <div className="w-full lg:w-80 shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
             <div className="glass-panel p-4 rounded-xl flex flex-col gap-3">
@@ -478,7 +478,7 @@ export default function TerminalPage() {
           </div>
 
           {/* Right panel: Log Terminal Console */}
-          <div className="flex-1 flex flex-col glass-panel rounded-xl overflow-hidden border border-slate-800/80 bg-slate-950">
+          <div className="flex-1 min-h-[500px] lg:min-h-0 flex flex-col glass-panel rounded-xl overflow-hidden border border-slate-800/80 bg-slate-950">
             {/* Console header controls */}
             <div className="p-3 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 px-4">
               <div className="flex items-center gap-2">

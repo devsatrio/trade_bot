@@ -64,12 +64,12 @@ function SettingCard({ title, children }: { title: string; children: React.React
 
 function FieldRow({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-2 md:py-0">
       <div className="flex-1">
-        <label className="text-sm text-slate-300 font-medium">{label}</label>
-        {desc && <p className="text-[11px] text-slate-500 mt-0.5">{desc}</p>}
+        <label className="text-sm text-slate-200 font-semibold md:font-medium">{label}</label>
+        {desc && <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{desc}</p>}
       </div>
-      <div className="w-64 shrink-0">{children}</div>
+      <div className="w-full md:w-64 shrink-0">{children}</div>
     </div>
   );
 }
