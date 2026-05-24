@@ -549,7 +549,7 @@ export default function Dashboard() {
           </div>
 
           {/* Chart & Trades Log */}
-          <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 flex-1 min-h-0">
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 xl:h-[600px] w-full">
             <div className="xl:col-span-3 glass-panel rounded-xl p-4 flex flex-col h-[500px] xl:h-full">
               <div className="flex items-center gap-2 shrink-0 mb-1">
                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
@@ -592,7 +592,7 @@ export default function Dashboard() {
                   </button>
                 )}
               </h3>
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-h-[200px]">
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-h-[200px] max-h-[480px]">
                 {paperTrades.filter(t => (t.symbol || "").toUpperCase().startsWith(activeCoin.toUpperCase())).length === 0 && <p className="text-xs text-slate-500 text-center mt-4">Belum ada transaksi.</p>}
                 {(showAllLogs 
                   ? paperTrades.filter(t => (t.symbol || "").toUpperCase().startsWith(activeCoin.toUpperCase())) 
