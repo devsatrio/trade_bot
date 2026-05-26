@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BarChart3, Terminal, Settings } from "lucide-react";
+import { LayoutDashboard, BarChart3, Terminal, Settings, BookOpen } from "lucide-react";
 
 export default function MobileNav() {
   const pathname = usePathname();
@@ -20,6 +20,11 @@ export default function MobileNav() {
       name: "Analisa",
       href: "/analysis",
       icon: BarChart3,
+    },
+    {
+      name: "Almanac",
+      href: "/almanac",
+      icon: BookOpen,
     },
     {
       name: "Terminal",

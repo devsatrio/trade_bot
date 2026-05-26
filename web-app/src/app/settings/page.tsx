@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { 
-  Settings, Activity, LayoutDashboard, BarChart3, Lock, Terminal 
+  Settings, Activity, LayoutDashboard, BarChart3, Lock, Terminal, BookOpen 
 } from "lucide-react";
 import Link from "next/link";
 
@@ -23,7 +23,7 @@ declare global {
 type ToastType = "success" | "error" | "info";
 type ToastItem = { id: number; message: string; type: ToastType };
 
-const STRATEGIES = ["manual","real_strength_scalper","confirmed_fibonacci","rapid_scalper"];
+const STRATEGIES = ["manual","real_strength_scalper","confirmed_fibonacci","rapid_scalper","ichimoku_ultimate","adaptive_fib_trailing"];
 // "sma_crossover","rsi","macd","grid"
 const ORDER_TYPES = ["market","limit"];
 
@@ -202,6 +202,10 @@ export default function SettingsPage() {
             <BarChart3 className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Analisa</span>}
           </Link>
+          <Link href="/almanac" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
+            <BookOpen className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="whitespace-nowrap">Almanac</span>}
+          </Link>
           <Link href="/terminal" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden font-sans">
             <Terminal className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Terminal & Logs</span>}
@@ -324,7 +328,7 @@ export default function SettingsPage() {
           <SettingCard title="📊 Strategy & Automation">
             <FieldRow label="Strategy Type" desc="Algoritma analisis yang digunakan">
               <select value={settings.strategy_type || "manual"} onChange={e => updateSetting("strategy_type", e.target.value)} className={selectClass}>
-                {STRATEGIES.map(s => <option key={s} value={s}>{s === "manual" ? "🖱️ Manual" : s === "real_strength_scalper" ? "🛡️ Real Strength Scalper" : s === "confirmed_fibonacci" ? "📐 Confirmed Fibonacci" : s === "rapid_scalper" ? "⚡ Rapid Scalper (EMA Cross)" : s}</option>)}
+                {STRATEGIES.map(s => <option key={s} value={s}>{s === "manual" ? "🖱️ Manual" : s === "real_strength_scalper" ? "🛡️ Real Strength Scalper" : s === "confirmed_fibonacci" ? "📐 Confirmed Fibonacci" : s === "rapid_scalper" ? "⚡ Rapid Scalper (EMA Cross)" : s === "ichimoku_ultimate" ? "🐉 Ichimoku Ultimate Pro" : s === "adaptive_fib_trailing" ? "🌀 Adaptive Fib Trailing" : s}</option>)}
               </select>
             </FieldRow>
             <FieldRow label="Auto Trade" desc="Bot otomatis eksekusi sinyal dari strategi">

@@ -135,9 +135,16 @@ class HistoryManager:
 
 history_manager = HistoryManager()
 
-def calculate_rss(df):
-    if len(df) < 65: # Need enough data for SMA 60
+def calculate_rss(df_in):
+    if len(df_in) < 65: # Need enough data for SMA 60
         return "HOLD", 0, {}
+
+    # Copy the DataFrame to avoid mutating the shared cache in HistoryManager
+    df = df_in.copy()
+    
+    # Handle any sparse/resampled NaN gaps using forward-fill
+    df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill()
+    df['volume'] = df['volume'].fillna(0.0)
 
     # Inputs (Hardcoded from user's Pine Script defaults)
     momLen = 9
@@ -153,39 +160,40 @@ def calculate_rss(df):
 
     # Calculations
     # Momentum (ROC)
-    df['mom'] = df['close'].pct_change(momLen) * 100
+    df['mom'] = (df['close'].pct_change(momLen) * 100).fillna(0.0)
     
     # Volume Ratio
-    df['volMA'] = df['volume'].rolling(volLen).mean()
-    df['volRatio'] = df['volume'] / df['volMA']
+    df['volMA'] = df['volume'].rolling(volLen).mean().replace(0, np.nan)
+    df['volRatio'] = (df['volume'] / df['volMA']).fillna(1.0)
     
-    # DMI/ADX (Simplified approximation since we might have low volatility in resampled data)
-    df['up'] = df['high'].diff()
-    df['down'] = -df['low'].diff()
+    # DMI/ADX
+    df['up'] = df['high'].diff().fillna(0.0)
+    df['down'] = (-df['low'].diff()).fillna(0.0)
     
-    df['plusDM'] = np.where((df['up'] > df['down']) & (df['up'] > 0), df['up'], 0)
-    df['minusDM'] = np.where((df['down'] > df['up']) & (df['down'] > 0), df['down'], 0)
+    df['plusDM'] = np.where((df['up'] > df['down']) & (df['up'] > 0), df['up'], 0.0)
+    df['minusDM'] = np.where((df['down'] > df['up']) & (df['down'] > 0), df['down'], 0.0)
     
     # True Range
     df['tr'] = np.maximum(df['high'] - df['low'], 
                 np.maximum(abs(df['high'] - df['close'].shift(1)), 
-                          abs(df['low'] - df['close'].shift(1))))
+                          abs(df['low'] - df['close'].shift(1)))).fillna(0.0)
     
-    df['tr_smooth'] = df['tr'].rolling(diLen).sum()
-    df['plusDI'] = 100 * (df['plusDM'].rolling(diLen).sum() / df['tr_smooth'])
-    df['minusDI'] = 100 * (df['minusDM'].rolling(diLen).sum() / df['tr_smooth'])
+    df['tr_smooth'] = df['tr'].rolling(diLen).sum().replace(0, np.nan)
+    df['plusDI'] = (100 * (df['plusDM'].rolling(diLen).sum() / df['tr_smooth'])).fillna(0.0)
+    df['minusDI'] = (100 * (df['minusDM'].rolling(diLen).sum() / df['tr_smooth'])).fillna(0.0)
     
-    df['dx'] = 100 * abs(df['plusDI'] - df['minusDI']) / (df['plusDI'] + df['minusDI'])
-    df['adx'] = df['dx'].rolling(adxLen).mean()
+    di_sum = (df['plusDI'] + df['minusDI']).replace(0, np.nan)
+    df['dx'] = (100 * abs(df['plusDI'] - df['minusDI']) / di_sum).fillna(0.0)
+    df['adx'] = df['dx'].rolling(adxLen).mean().fillna(0.0)
     
     # Strength
     df['adxBoost'] = df['adx'] / 20.0
     df['rawStr'] = df['mom'] * np.maximum(df['volRatio'], 0.3) * np.maximum(df['adxBoost'], 0.3)
-    df['strength'] = df['rawStr'].ewm(span=smoothLen).mean()
+    df['strength'] = df['rawStr'].ewm(span=smoothLen).mean().fillna(0.0)
     
     # Trend Filter
-    df['fastMA'] = df['close'].rolling(smaFast).mean()
-    df['slowMA'] = df['close'].rolling(smaSlow).mean()
+    df['fastMA'] = df['close'].rolling(smaFast).mean().ffill().fillna(df['close'])
+    df['slowMA'] = df['close'].rolling(smaSlow).mean().ffill().fillna(df['close'])
     
     # Current values
     curr = df.iloc[-1]
@@ -205,14 +213,166 @@ def calculate_rss(df):
     shortSig = (curr['strength'] < -strThr and strongAdx and strongVol and 
                 bearDir and curr['strength'] < prev['strength'] and downtrend)
     
-    if longSig: return "LONG", 0.9, curr.to_dict()
-    if shortSig: return "SHORT", 0.9, curr.to_dict()
-    
-    return "HOLD", 0.5, curr.to_dict()
+    # Convert numpy values to standard python floats/ints and clean nan/inf for safe FastAPI/JSON serialization
+    curr_dict = {}
+    for k, v in curr.to_dict().items():
+        if isinstance(v, pd.Timestamp):
+            curr_dict[k] = v.isoformat()
+        elif isinstance(v, (np.integer, int)):
+            curr_dict[k] = int(v)
+        elif isinstance(v, (np.floating, float)):
+            if np.isnan(v) or np.isinf(v):
+                curr_dict[k] = 0.0
+            else:
+                curr_dict[k] = float(v)
+        else:
+            curr_dict[k] = str(v)
+            
+    decision = "HOLD"
+    confidence = 0.5
+    if longSig:
+        decision = "LONG"
+        confidence = 0.9
+    elif shortSig:
+        decision = "SHORT"
+        confidence = 0.9
+        
+    return decision, confidence, curr_dict
 
-def calculate_confirmed_fib(df):
-    if len(df) < 50:
+def calculate_ichimoku_ultimate(df_in):
+    if len(df_in) < 80:
+        return "HOLD", 0.0, {"status": "warming_up", "reason": "Waiting for enough candles (need at least 80)"}
+        
+    df = df_in.copy()
+    # Handle NaN gaps using forward-fill
+    df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill()
+    df['volume'] = df['volume'].fillna(0.0)
+
+    # 1. Inputs
+    tenkanPeriod = 9
+    kijunPeriod = 26
+    senkouSpanBPeriod = 52
+    displacement = 26
+    
+    # Filters
+    useCloudFilter = True
+    useChikouConfirmation = True
+    strongSignalsOnly = False
+
+    # 2. Indicators
+    # Tenkan-Sen (Conversion Line)
+    df['highest_tenkan'] = df['high'].rolling(tenkanPeriod).max()
+    df['lowest_tenkan'] = df['low'].rolling(tenkanPeriod).min()
+    df['tenkanSen'] = (df['highest_tenkan'] + df['lowest_tenkan']) / 2
+    
+    # Kijun-Sen (Base Line)
+    df['highest_kijun'] = df['high'].rolling(kijunPeriod).max()
+    df['lowest_kijun'] = df['low'].rolling(kijunPeriod).min()
+    df['kijunSen'] = (df['highest_kijun'] + df['lowest_kijun']) / 2
+    
+    # Senkou Span A (Leading Span A)
+    df['senkouSpanA'] = (df['tenkanSen'] + df['kijunSen']) / 2
+    
+    # Senkou Span B (Leading Span B)
+    df['highest_spanB'] = df['high'].rolling(senkouSpanBPeriod).max()
+    df['lowest_spanB'] = df['low'].rolling(senkouSpanBPeriod).min()
+    df['senkouSpanB'] = (df['highest_spanB'] + df['lowest_spanB']) / 2
+
+    # Displaced cloud values (shifted by displacement to align with current time)
+    df['senkouSpanA_displaced'] = df['senkouSpanA'].shift(displacement)
+    df['senkouSpanB_displaced'] = df['senkouSpanB'].shift(displacement)
+
+    # Cloud boundaries
+    df['cloudTop'] = np.maximum(df['senkouSpanA_displaced'], df['senkouSpanB_displaced'])
+    df['cloudBottom'] = np.minimum(df['senkouSpanA_displaced'], df['senkouSpanB_displaced'])
+
+    # Shifted close for Chikou Span
+    df['close_shifted'] = df['close'].shift(displacement)
+
+    # TK Cross helper columns
+    df['prev_tenkan'] = df['tenkanSen'].shift(1)
+    df['prev_kijun'] = df['kijunSen'].shift(1)
+    
+    # Drop rows with NaN to avoid index errors in final rows
+    df_clean = df.dropna(subset=['tenkanSen', 'kijunSen', 'senkouSpanA_displaced', 'senkouSpanB_displaced', 'close_shifted', 'prev_tenkan', 'prev_kijun'])
+    if len(df_clean) < 2:
+        return "HOLD", 0.0, {"status": "warming_up", "reason": "Not enough valid indicator data after dropna"}
+
+    curr = df_clean.iloc[-1]
+    prev = df_clean.iloc[-2]
+
+    # TK Cross
+    bullishTKCross = prev['tenkanSen'] <= prev['kijunSen'] and curr['tenkanSen'] > curr['kijunSen']
+    bearishTKCross = prev['tenkanSen'] >= prev['kijunSen'] and curr['tenkanSen'] < curr['kijunSen']
+
+    # Cloud conditions
+    kumoGreen = curr['senkouSpanA'] > curr['senkouSpanB']
+    kumoRed = curr['senkouSpanA'] < curr['senkouSpanB']
+
+    priceAboveCloud = curr['close'] > curr['cloudTop']
+    priceBelowCloud = curr['close'] < curr['cloudBottom']
+
+    # Chikou confirmation
+    chikouBullish = curr['close'] > curr['close_shifted']
+    chikouBearish = curr['close'] < curr['close_shifted']
+
+    # Signal conditions logic
+    longCondition = bullishTKCross
+    if useCloudFilter:
+        longCondition = longCondition and kumoGreen
+    if strongSignalsOnly:
+        longCondition = longCondition and priceAboveCloud
+    if useChikouConfirmation:
+        longCondition = longCondition and chikouBullish
+
+    shortCondition = bearishTKCross
+    if useCloudFilter:
+        shortCondition = shortCondition and kumoRed
+    if strongSignalsOnly:
+        shortCondition = shortCondition and priceBelowCloud
+    if useChikouConfirmation:
+        shortCondition = shortCondition and chikouBearish
+
+    # Safe dictionary serialization for FastAPI
+    curr_dict = {}
+    for k, v in curr.to_dict().items():
+        if isinstance(v, pd.Timestamp):
+            curr_dict[k] = v.isoformat()
+        elif isinstance(v, (np.integer, int)):
+            curr_dict[k] = int(v)
+        elif isinstance(v, (np.floating, float)):
+            if np.isnan(v) or np.isinf(v):
+                curr_dict[k] = 0.0
+            else:
+                curr_dict[k] = float(v)
+        else:
+            curr_dict[k] = str(v)
+
+    curr_dict['kumoGreen'] = bool(kumoGreen)
+    curr_dict['kumoRed'] = bool(kumoRed)
+    curr_dict['priceAboveCloud'] = bool(priceAboveCloud)
+    curr_dict['priceBelowCloud'] = bool(priceBelowCloud)
+    curr_dict['chikouBullish'] = bool(chikouBullish)
+    curr_dict['chikouBearish'] = bool(chikouBearish)
+
+    decision = "HOLD"
+    confidence = 0.5
+    if longCondition:
+        decision = "LONG"
+        confidence = 0.95
+    elif shortCondition:
+        decision = "SHORT"
+        confidence = 0.95
+
+    return decision, confidence, curr_dict
+
+def calculate_confirmed_fib(df_in):
+    if len(df_in) < 50:
         return "HOLD", 0, {"reason": "Waiting for data"}
+
+    df = df_in.copy()
+    df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill()
+    df['volume'] = df['volume'].fillna(0.0)
 
     pivotLen = 8
     displacementATR = 1.5
@@ -307,6 +467,222 @@ def calculate_rapid_scalper(df):
     
     return "HOLD", 0.5, {"ema2": last['ema2'], "ema5": last['ema5']}
 
+def calculate_adaptive_fib_trailing(df_in):
+    if len(df_in) < 60:
+        return "HOLD", 0.0, {"status": "warming_up", "reason": "Need at least 60 candles"}
+
+    df = df_in.copy()
+    df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill()
+    df['volume'] = df['volume'].fillna(0.0)
+
+    # 1. Core Indicators
+    # ATR 14
+    df['tr'] = np.maximum(df['high'] - df['low'], 
+                np.maximum(abs(df['high'] - df['close'].shift(1)), 
+                          abs(df['low'] - df['close'].shift(1)))).fillna(0.0)
+    df['atr14'] = df['tr'].rolling(14).mean().fillna(0.0)
+    df['atrAvg50'] = df['atr14'].rolling(50).mean().fillna(df['atr14'])
+    
+    # Volatility Ratio
+    df['volRatio'] = (df['atr14'] / df['atrAvg50'].replace(0, 1e-8)).fillna(1.0)
+    
+    # ADX 14
+    df['up'] = df['high'].diff().fillna(0.0)
+    df['down'] = (-df['low'].diff()).fillna(0.0)
+    df['plusDM'] = np.where((df['up'] > df['down']) & (df['up'] > 0), df['up'], 0.0)
+    df['minusDM'] = np.where((df['down'] > df['up']) & (df['down'] > 0), df['down'], 0.0)
+    
+    df['tr_smooth'] = df['tr'].rolling(14).sum().replace(0, np.nan)
+    df['plusDI'] = (100 * (df['plusDM'].rolling(14).sum() / df['tr_smooth'])).fillna(0.0)
+    df['minusDI'] = (100 * (df['minusDM'].rolling(14).sum() / df['tr_smooth'])).fillna(0.0)
+    
+    di_sum = (df['plusDI'] + df['minusDI']).replace(0, np.nan)
+    df['dx'] = (100 * abs(df['plusDI'] - df['minusDI']) / di_sum).fillna(0.0)
+    df['adx'] = df['dx'].rolling(14).mean().fillna(0.0)
+
+    # SMA 50
+    df['sma50'] = df['close'].rolling(50).mean().ffill().fillna(df['close'])
+
+    # 2. Market Regime with Hysteresis
+    regimes = []
+    curr_regime = 0 # 0=RANGE, 1=TREND, 2=VOLATILE
+    for i in range(len(df)):
+        vol_r = df['volRatio'].iloc[i]
+        adx_v = df['adx'].iloc[i]
+        if vol_r >= 1.6:
+            curr_regime = 2
+        elif curr_regime == 2 and vol_r < 1.36:
+            curr_regime = 1 if adx_v >= 22.0 else 0
+        elif curr_regime != 2:
+            if adx_v >= 22.0:
+                curr_regime = 1
+            elif curr_regime == 1 and adx_v < 19.8:
+                curr_regime = 0
+            else:
+                curr_regime = 0
+        regimes.append(curr_regime)
+    df['regime'] = regimes
+
+    # 3. Structure Engine (Pivot detection: lookback 13)
+    pivot_len = 13
+    df['is_pivot_high'] = False
+    df['is_pivot_low'] = False
+    
+    highs = df['high'].values
+    lows = df['low'].values
+    is_ph = [False] * len(df)
+    is_pl = [False] * len(df)
+    
+    for i in range(pivot_len, len(df) - pivot_len):
+        val_h = highs[i]
+        val_l = lows[i]
+        
+        ph = True
+        pl = True
+        for j in range(i - pivot_len, i + pivot_len + 1):
+            if highs[j] > val_h:
+                ph = False
+            if lows[j] < val_l:
+                pl = False
+        is_ph[i] = ph
+        is_pl[i] = pl
+        
+    df['is_pivot_high'] = is_ph
+    df['is_pivot_low'] = is_pl
+
+    df['latestHigh'] = df['high'].where(df['is_pivot_high']).ffill()
+    df['latestLow'] = df['low'].where(df['is_pivot_low']).ffill()
+
+    df_clean = df.dropna(subset=['latestHigh', 'latestLow'])
+    if len(df_clean) < 2:
+        return "HOLD", 0.0, {"status": "warming_up", "reason": "No pivots detected yet"}
+
+    df['fibRange'] = df['latestHigh'] - df['latestLow']
+    df['fib500'] = df['latestHigh'] - df['fibRange'] * 0.5
+    
+    fibMults = []
+    for r in df['regime']:
+        if r == 1:
+            fibMults.append(0.382)
+        elif r == 2:
+            fibMults.append(0.5)
+        else:
+            fibMults.append(0.618)
+    df['fibMult'] = fibMults
+    
+    df['volAdjust'] = (1.0 / df['volRatio']).clip(0.7, 1.5)
+    
+    df['selectedFibBull'] = (df['latestLow'] + df['fibRange'] * df['fibMult'] * df['volAdjust']).clip(df['latestLow'], df['latestHigh'])
+    df['selectedFibBear'] = (df['latestHigh'] - df['fibRange'] * df['fibMult'] * df['volAdjust']).clip(df['latestLow'], df['latestHigh'])
+
+    trail_stops = []
+    trail_dirs = []
+    curr_stop = np.nan
+    curr_dir = 0
+    
+    for i in range(len(df)):
+        close_i = df['close'].iloc[i]
+        bull_i = df['selectedFibBull'].iloc[i]
+        bear_i = df['selectedFibBear'].iloc[i]
+        fib500_i = df['fib500'].iloc[i]
+        
+        if np.isnan(curr_stop):
+            if not np.isnan(bull_i) and not np.isnan(bear_i):
+                if close_i > fib500_i:
+                    curr_stop = bull_i
+                    curr_dir = 1
+                else:
+                    curr_stop = bear_i
+                    curr_dir = -1
+        else:
+            if curr_dir == 1:
+                curr_stop = max(curr_stop, bull_i)
+                if close_i < curr_stop:
+                    curr_stop = bear_i
+                    curr_dir = -1
+            else:
+                curr_stop = min(curr_stop, bear_i)
+                if close_i > curr_stop:
+                    curr_stop = bull_i
+                    curr_dir = 1
+                    
+        trail_stops.append(curr_stop)
+        trail_dirs.append(curr_dir)
+        
+    df['trail_stop'] = trail_stops
+    df['trail_dir'] = trail_dirs
+
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    crossedUp = (prev['close'] <= prev['fib500']) and (curr['close'] > curr['fib500'])
+    crossedDown = (prev['close'] >= prev['fib500']) and (curr['close'] < curr['fib500'])
+
+    bodySize = abs(curr['close'] - curr['open'])
+    candleRange = curr['high'] - curr['low']
+    bodyRatio = bodySize / (candleRange if candleRange != 0 else 1e-8)
+    bodyOk = bodyRatio >= 0.5
+    
+    penetration_long = curr['close'] - curr['fib500']
+    penetration_short = curr['fib500'] - curr['close']
+    penetrationOk_long = penetration_long > 0.2 * curr['atr14']
+    penetrationOk_short = penetration_short > 0.2 * curr['atr14']
+
+    regimeOk = True
+    if curr['regime'] == 0:
+        regimeOk = curr['adx'] >= 18.0
+
+    longCondition = crossedUp and bodyOk and penetrationOk_long and regimeOk
+    shortCondition = crossedDown and bodyOk and penetrationOk_short and regimeOk
+
+    decision = "HOLD"
+    confidence = 0.5
+    
+    structScore = 0.5
+    regimeScore = 0.8 if curr['regime'] == 1 else 0.5
+    adxScore = min(curr['adx'] / 40.0, 1.0)
+    volScoreLocal = min(curr['volRatio'] / 1.5, 1.0)
+    volFavor = 1.0 - abs(curr['volRatio'] - 1.0) / 1.5 if 0.3 <= curr['volRatio'] <= 2.5 else 0.0
+    
+    distance = abs(curr['fib500'] - curr['sma50']) / (curr['atr14'] if curr['atr14'] != 0 else 1.0)
+    confScore = max(1.0 - distance / 2.0, 0.0)
+
+    total_conf = (structScore * 0.2 +
+                  regimeScore * 0.2 +
+                  adxScore * 0.15 +
+                  volScoreLocal * 0.15 +
+                  volFavor * 0.15 +
+                  confScore * 0.15)
+    
+    confidence = float(total_conf)
+
+    if longCondition:
+        decision = "LONG"
+    elif shortCondition:
+        decision = "SHORT"
+
+    curr_dict = {}
+    for k, v in curr.to_dict().items():
+        if isinstance(v, pd.Timestamp):
+            curr_dict[k] = v.isoformat()
+        elif isinstance(v, (np.integer, int)):
+            curr_dict[k] = int(v)
+        elif isinstance(v, (np.floating, float)):
+            if np.isnan(v) or np.isinf(v):
+                curr_dict[k] = 0.0
+            else:
+                curr_dict[k] = float(v)
+        else:
+            curr_dict[k] = str(v)
+
+    curr_dict['crossedUp'] = bool(crossedUp)
+    curr_dict['crossedDown'] = bool(crossedDown)
+    curr_dict['regime_label'] = "Trending" if curr['regime'] == 1 else "Volatile" if curr['regime'] == 2 else "Ranging"
+    curr_dict['fib500'] = float(curr['fib500'])
+    curr_dict['trail_stop'] = float(curr['trail_stop'])
+
+    return decision, confidence, curr_dict
+
 @app.post("/analyze")
 def analyze_market_data(data: MarketData):
     # Add tick and get candles
@@ -373,6 +749,10 @@ def analyze_market_data(data: MarketData):
                 decision, confidence, metadata = calculate_confirmed_fib(candles_df)
             elif strategy_type == "rapid_scalper":
                 decision, confidence, metadata = calculate_rapid_scalper(candles_df)
+            elif strategy_type == "ichimoku_ultimate":
+                decision, confidence, metadata = calculate_ichimoku_ultimate(candles_df)
+            elif strategy_type == "adaptive_fib_trailing":
+                decision, confidence, metadata = calculate_adaptive_fib_trailing(candles_df)
             
             if decision != "HOLD":
                 # Check total open positions limit across all symbols
@@ -492,7 +872,7 @@ def execute_paper_trade(data: PaperTradeData):
         if symbol_open > 0:
             raise HTTPException(status_code=400, detail=f"Gagal: Anda sudah memiliki posisi terbuka untuk {data.symbol}. Harap tutup posisi tersebut sebelum membuka yang baru.")        
         # With leverage, margin required = (price * size) / leverage
-        gas_fee = float(settings.get("gas_fee", "0.01"))
+        entry_fee = data.price * data.size * 0.00045
         margin = (data.price * data.size) / leverage
         
         cursor.execute("SELECT balance FROM paper_account WHERE id = 1")
@@ -501,9 +881,9 @@ def execute_paper_trade(data: PaperTradeData):
             raise Exception("Paper account not initialized")
         current_balance = row["balance"]
         
-        total_cost = margin + gas_fee
+        total_cost = margin + entry_fee
         if current_balance < total_cost:
-            raise HTTPException(status_code=400, detail=f"Saldo tidak cukup. Butuh ${total_cost:.2f} (Margin+Gas), tersisa ${current_balance:.2f}")
+            raise HTTPException(status_code=400, detail=f"Saldo tidak cukup. Butuh ${total_cost:.2f} (Margin+Fee), tersisa ${current_balance:.2f}")
             
         new_balance = current_balance - total_cost
         cursor.execute("UPDATE paper_account SET balance = ? WHERE id = 1", (new_balance,))
@@ -518,7 +898,7 @@ def execute_paper_trade(data: PaperTradeData):
         
         cursor.execute(
             "INSERT INTO trades (symbol, side, price, size, tx_hash, status, fee, strategy, mode, leverage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (data.symbol, data.side, data.price, data.size, "PAPER_TRADE", "OPEN", gas_fee, settings.get("strategy_type", "manual"), "paper", int(leverage))
+            (data.symbol, data.side, data.price, data.size, "PAPER_TRADE", "OPEN", entry_fee, settings.get("strategy_type", "manual"), "paper", int(leverage))
         )
         trade_id = cursor.lastrowid
         conn.commit()
@@ -534,7 +914,7 @@ def execute_paper_trade(data: PaperTradeData):
               f"💵 <b>Real Size (Margin):</b> ${margin:,.2f} USD (Leverage: {int(leverage)}x)\n" \
               f"🧠 <b>Strategi:</b> {strat_name}\n" \
               f"📊 <b>PnL:</b> 🟩 $0.00 (0.00%)\n" \
-              f"⛽ <b>Gas Fee:</b> ${gas_fee:.4f}\n" \
+              f"⛽ <b>Trading Fee (Taker):</b> ${entry_fee:.4f}\n" \
               f"------------------------\n" \
               f"🎯 <b>TP:</b> ${tp_price:,.2f}\n" \
               f"🛑 <b>SL:</b> ${sl_price:,.2f}"
@@ -570,18 +950,24 @@ def close_paper_trade(data: CloseTradeData):
         side = trade["side"]
         trade_mode = trade.get("mode", "paper")
         funding_fee = float(trade.get("funding_fee") or 0.0)
+        entry_fee = float(trade.get("fee") or 0.0)
         
-        # Calculate PnL
+        # Calculate Gross PnL
         if side == "LONG":
-            pnl = (data.close_price - entry_price) * size
+            gross_pnl = (data.close_price - entry_price) * size
         else:  # SHORT
-            pnl = (entry_price - data.close_price) * size
+            gross_pnl = (entry_price - data.close_price) * size
+        
+        # Calculate exit fee and total trading fee using Hyperliquid 0.045% Taker fee
+        exit_fee = data.close_price * size * 0.00045
+        total_trading_fee = entry_fee + exit_fee
+        pnl = gross_pnl - total_trading_fee
         
         new_balance = 0.0
         if trade_mode == "paper":
-            # Return the actual margin (entry cost / leverage) + PnL to balance
+            # Return the actual margin (entry cost / leverage) + gross_pnl - exit_fee
             leverage = float(trade.get("leverage") or 1.0)
-            cost_returned = ((entry_price * size) / leverage) + pnl
+            cost_returned = ((entry_price * size) / leverage) + gross_pnl - exit_fee
             cursor.execute("SELECT balance FROM paper_account WHERE id = 1")
             current_balance = cursor.fetchone()["balance"]
             new_balance = current_balance + cost_returned
@@ -589,10 +975,10 @@ def close_paper_trade(data: CloseTradeData):
             # Update balance
             cursor.execute("UPDATE paper_account SET balance = ? WHERE id = 1", (new_balance,))
         
-        # Update trade as closed
+        # Update trade as closed, storing Net PnL in 'pnl' and total_trading_fee in 'fee'
         cursor.execute(
-            "UPDATE trades SET status = 'CLOSED', close_price = ?, pnl = ?, closed_at = datetime('now') WHERE id = ?",
-            (data.close_price, pnl, data.trade_id)
+            "UPDATE trades SET status = 'CLOSED', close_price = ?, pnl = ?, fee = ?, closed_at = datetime('now') WHERE id = ?",
+            (data.close_price, pnl, total_trading_fee, data.trade_id)
         )
         
         conn.commit()
@@ -610,12 +996,12 @@ def close_paper_trade(data: CloseTradeData):
               f"📦 <b>Size:</b> ${size_usd:,.2f} USD ({size} {trade['symbol'].split('/')[0]})\n" \
               f"------------------------\n" \
               f"📊 <b>Result:</b> {pnl_emoji}\n" \
-              f"💵 <b>Gross PnL:</b> <b>${pnl:,.2f}</b>\n"
+              f"💵 <b>Gross PnL:</b> <b>${gross_pnl:,.2f}</b>\n" \
+              f"⛽ <b>Trading Fee (Taker):</b> <b>-${total_trading_fee:,.4f}</b>\n"
         if funding_fee != 0:
-            msg += f"💸 <b>Funding Fee:</b> <b>${funding_fee:+,.4f}</b>\n" \
-                   f"💰 <b>Net PnL:</b> <b>${net_pnl:,.2f}</b>"
-        else:
-            msg += f"💵 <b>Net PnL:</b> <b>${pnl:,.2f}</b>"
+            msg += f"💸 <b>Funding Fee:</b> <b>${funding_fee:+,.4f}</b>\n"
+        
+        msg += f"💰 <b>Net PnL:</b> <b>${net_pnl:,.2f}</b>"
         send_telegram_notification(msg)
         
         pnl_label = f"+${net_pnl:,.2f}" if net_pnl >= 0 else f"-${abs(net_pnl):,.2f}"
@@ -624,7 +1010,7 @@ def close_paper_trade(data: CloseTradeData):
             "status": "success",
             "message": f"Closed {side} @ ${data.close_price:,.2f} | PnL: {pnl_label}",
             "pnl": net_pnl,
-            "gross_pnl": pnl,
+            "gross_pnl": gross_pnl,
             "funding_fee": funding_fee,
             "new_balance": new_balance
         }
@@ -1006,19 +1392,28 @@ def send_positions_report(token, chat_id):
             curr_price = prices.get(symbol)
             pnl_str = ""
             funding_fee = float(trade.get('funding_fee') or 0.0)
+            entry_fee = float(trade.get('fee') or 0.0)
             if curr_price:
                 trade_cost = entry_price * size
                 unrealized_pnl = (curr_price - entry_price) * size if side == "LONG" else (entry_price - curr_price) * size
                 trade_leverage = int(trade.get('leverage') or 1)
                 pnl_pct = (unrealized_pnl / trade_cost) * 100 * trade_leverage
                 pnl_emoji = "🟩" if unrealized_pnl >= 0 else "🟥"
-                pnl_str = f"\n{pnl_emoji} <b>Gross PnL:</b> ${unrealized_pnl:+,.2f} ({pnl_pct:+,.2f}%)"
+                
+                # Estimate exit fee and calculate net unrealized pnl
+                exit_fee = curr_price * size * 0.00045
+                total_trading_fee = entry_fee + exit_fee
+                net_pnl = unrealized_pnl - total_trading_fee - funding_fee
+                net_pnl_emoji = "🟩" if net_pnl >= 0 else "🟥"
+                net_pnl_pct = (net_pnl / trade_cost) * 100 * trade_leverage
+                
+                pnl_str = f"\n{pnl_emoji} <b>Gross PnL:</b> ${unrealized_pnl:+,.2f} ({pnl_pct:+,.2f}%)" \
+                          f"\n⛽ <b>Est. Fees (Taker):</b> -${total_trading_fee:,.4f}"
                 if funding_fee != 0:
                     funding_emoji = "💸" if funding_fee > 0 else "🎁"
                     pnl_str += f"\n{funding_emoji} <b>Funding Fee:</b> ${funding_fee:+,.4f}"
-                    net_pnl = unrealized_pnl - funding_fee
-                    net_pnl_emoji = "🟩" if net_pnl >= 0 else "🟥"
-                    pnl_str += f"\n{net_pnl_emoji} <b>Net PnL:</b> ${net_pnl:+,.2f}"
+                
+                pnl_str += f"\n{net_pnl_emoji} <b>Net PnL:</b> <b>${net_pnl:+,.2f} ({net_pnl_pct:+,.2f}%)</b>"
                 price_str = f"${curr_price:,.2f}"
             else:
                 price_str = "Loading..."
@@ -1168,11 +1563,16 @@ def close_all_open_positions(token, chat_id):
             # Use fetched live price, or fallback to entry price if API failed
             close_price = prices.get(symbol, entry_price)
             
-            # Calculate PnL
+            # Calculate Gross PnL
             if side == "LONG":
-                pnl = (close_price - entry_price) * size
+                gross_pnl = (close_price - entry_price) * size
             else:  # SHORT
-                pnl = (entry_price - close_price) * size
+                gross_pnl = (entry_price - close_price) * size
+                
+            entry_fee = float(trade.get("fee") or 0.0)
+            exit_fee = close_price * size * 0.00045
+            total_trading_fee = entry_fee + exit_fee
+            pnl = gross_pnl - total_trading_fee
                 
             trade_leverage = int(float(trade.get('leverage') or 1))
             pnl_pct = (pnl / (entry_price * size)) * 100 * trade_leverage if (entry_price * size) > 0 else 0.0
@@ -1260,7 +1660,7 @@ def close_all_open_positions(token, chat_id):
                 # For paper trades, perform database update in a new connection
                 total_pnl += pnl
                 trade_leverage = float(trade.get("leverage") or 1.0)
-                cost_returned = ((entry_price * size) / trade_leverage) + pnl
+                cost_returned = ((entry_price * size) / trade_leverage) + gross_pnl - exit_fee
                 
                 try:
                     conn_write = sqlite3.connect(DB_PATH)
@@ -1268,8 +1668,8 @@ def close_all_open_positions(token, chat_id):
                     
                     # Update trade to CLOSED
                     cursor_write.execute(
-                        "UPDATE trades SET status = 'CLOSED', close_price = ?, pnl = ?, closed_at = datetime('now') WHERE id = ?",
-                        (close_price, pnl, trade_id)
+                        "UPDATE trades SET status = 'CLOSED', close_price = ?, pnl = ?, fee = ?, closed_at = datetime('now') WHERE id = ?",
+                        (close_price, pnl, total_trading_fee, trade_id)
                     )
                     
                     # Read paper balance and add returned funds

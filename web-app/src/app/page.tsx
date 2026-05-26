@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { 
   Settings, Activity, TrendingUp, TrendingDown, 
   Wallet, Zap, LayoutDashboard, History, ArrowUpRight, ArrowDownLeft,
-  BarChart3, Lock, Terminal
+  BarChart3, Lock, Terminal, BookOpen, Shield
 } from "lucide-react";
 import Link from "next/link";
 
@@ -343,6 +343,10 @@ export default function Dashboard() {
             <BarChart3 className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Analisa</span>}
           </Link>
+          <Link href="/almanac" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
+            <BookOpen className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="whitespace-nowrap">Almanac</span>}
+          </Link>
           <Link href="/terminal" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden font-sans">
             <Terminal className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Terminal & Logs</span>}
@@ -385,34 +389,6 @@ export default function Dashboard() {
         <header className="glass-panel border-x-0 border-t-0 p-3 px-6 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4">
             <h2 className="text-base font-semibold text-slate-200">Market Overview</h2>
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${botSettings.network === "mainnet" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-sky-500/10 text-sky-400 border-sky-500/20"}`}>
-                {botSettings.network === "mainnet" ? "🌐 Mainnet" : "🧪 Testnet"}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-indigo-500/10 text-indigo-400 border-indigo-500/20 flex items-center gap-1">
-                {botSettings.strategy_type === "real_strength_scalper" ? "🛡️ Real Strength Scalper" : 
-                 botSettings.strategy_type === "confirmed_fibonacci" ? "📐 Confirmed Fibonacci" : 
-                 botSettings.strategy_type === "manual" ? "🖱️ Manual" : 
-                 `📊 ${botSettings.strategy_type?.toUpperCase()}`}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-violet-500/10 text-violet-400 border-violet-500/20 flex items-center gap-1">
-                ⚡ Leverage {leverage}x
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 flex items-center gap-1">
-                💵 Size: ${botSettings.max_position_size || "100"} USD
-              </span>
-              {((botSettings.strategy_type === "real_strength_scalper" && candlesCollected < 65) || 
-                (botSettings.strategy_type === "confirmed_fibonacci" && candlesCollected < 50)) && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-amber-500/10 text-amber-500 border-amber-500/20 flex items-center gap-1">
-                  ⏳ Warmup {candlesCollected}/{botSettings.strategy_type === "real_strength_scalper" ? 65 : 50}
-                </span>
-              )}
-              {botSettings.auto_trade === "true" && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 animate-pulse">
-                  🤖 AUTO
-                </span>
-              )}
-            </div>
           </div>
           <div className="flex items-center gap-3">
             {userAddress && <div className="px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-xs font-mono text-slate-300">{userAddress.slice(0,6)}...{userAddress.slice(-4)}</div>}
@@ -431,7 +407,7 @@ export default function Dashboard() {
           {error && <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">{error}</div>}
 
           {/* Stats & Controls */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
             <div className="glass-panel p-4 rounded-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl -mr-8 -mt-8"></div>
               <h3 className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2 border-b border-slate-700/50 pb-1">Account Value</h3>
@@ -462,89 +438,131 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="glass-panel p-4 rounded-xl col-span-1 md:col-span-2 flex flex-col justify-center">
-              <div className="flex items-center justify-between mb-3">
+            <div className="glass-panel p-4 rounded-xl col-span-1 lg:col-span-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-3 border-b border-slate-700/30 pb-2">
                 <div>
-                  <h3 className="text-slate-400 text-xs font-medium mb-1">Execution Controls</h3>
+                  <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Execution Controls</h3>
                   <p className="text-[10px] text-slate-500">
-                    Mode: <span className={botSettings.execution_mode === "live" ? "text-indigo-400 font-bold" : "text-emerald-400 font-bold"}>{botSettings.execution_mode === "live" ? "Live" : "Paper"}</span> | 
-                    Network: <span className={botSettings.network === "mainnet" ? "text-amber-400 font-bold" : "text-sky-400 font-bold"}>{botSettings.network === "mainnet" ? "Mainnet" : "Testnet"}</span>
+                    Mode: <span className={botSettings.execution_mode === "live" ? "text-indigo-400 font-bold" : "text-emerald-400 font-bold"}>{botSettings.execution_mode === "live" ? "Live Trading" : "Paper Trading"}</span>
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex-1 flex flex-col gap-2 border-r border-slate-700/50 pr-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between">
-                    {botSettings.execution_mode === "live" ? "🔴 LIVE" : "📝 PAPER"} {leverage}x <span className="text-emerald-500">{currentPrice > 0 ? `$${currentPrice.toLocaleString()}` : "Loading..."}</span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {botSettings.auto_trade === "true" ? (
-                      <div className="flex-1 flex flex-col gap-2">
-                        <div className="py-1.5 bg-indigo-500/5 border border-indigo-500/20 rounded-md text-[10px] text-center text-indigo-300 font-medium italic">
-                          🤖 Auto Trade is managing positions...
-                        </div>
-                        {botSettings.execution_mode !== "live" && (
-                          <a 
-                            href="https://app.hyperliquid-testnet.xyz/trade/BTC" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/30 rounded text-[10px] text-center font-bold transition-all flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(56,189,248,0.05)] hover:shadow-[0_0_15px_rgba(56,189,248,0.15)]"
-                          >
-                            📈 HL Testnet BTC Chart
-                          </a>
-                        )}
+
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+                  {botSettings.execution_mode === "live" ? "🔴 LIVE EXECUTION" : "📝 SIMULATED PAPER"} <span className="text-emerald-500">{currentPrice > 0 ? `$${currentPrice.toLocaleString()}` : "Loading..."}</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  {botSettings.auto_trade === "true" ? (
+                    <div className="flex-1 flex flex-col gap-2">
+                      <div className="py-2.5 bg-indigo-500/5 border border-indigo-500/20 rounded-md text-[10px] text-center text-indigo-300 font-medium italic">
+                        🤖 Auto Trade is managing positions...
                       </div>
-                    ) : (
-                      <>
-                        <button 
-                          disabled={currentPrice === 0 || (paperTrades || []).filter(t => t.status === "OPEN").length >= parseInt(botSettings.max_open_positions || "3")} 
-                          onClick={() => executeTrade("LONG")} 
-                          className={`flex-1 py-1.5 flex items-center justify-center gap-2 ${botSettings.execution_mode === "live" ? "bg-indigo-600 text-white hover:bg-indigo-500" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"} rounded-md text-xs font-bold disabled:opacity-50 transition-all`}
+                      {botSettings.execution_mode !== "live" && (
+                        <a 
+                          href="https://app.hyperliquid-testnet.xyz/trade/BTC" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="py-1 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/30 rounded text-[10px] text-center font-bold transition-all flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(56,189,248,0.05)] hover:shadow-[0_0_15px_rgba(56,189,248,0.15)]"
                         >
-                          <TrendingUp className="w-3 h-3" /> LONG ${tradeUsd}
-                        </button>
-                        <button 
-                          disabled={currentPrice === 0 || (paperTrades || []).filter(t => t.status === "OPEN").length >= parseInt(botSettings.max_open_positions || "3")} 
-                          onClick={() => executeTrade("SHORT")} 
-                          className={`flex-1 py-1.5 flex items-center justify-center gap-2 ${botSettings.execution_mode === "live" ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20"} rounded-md text-xs font-bold disabled:opacity-50 transition-all`}
-                        >
-                          <TrendingDown className="w-3 h-3" /> SHORT ${tradeUsd}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                          📈 HL Testnet BTC Chart
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <button 
+                        disabled={currentPrice === 0 || (paperTrades || []).filter(t => t.status === "OPEN").length >= parseInt(botSettings.max_open_positions || "3")} 
+                        onClick={() => executeTrade("LONG")} 
+                        className={`flex-1 py-2 flex items-center justify-center gap-2 ${botSettings.execution_mode === "live" ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)]" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]"} rounded-md text-xs font-bold disabled:opacity-50 transition-all`}
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" /> LONG ${tradeUsd}
+                      </button>
+                      <button 
+                        disabled={currentPrice === 0 || (paperTrades || []).filter(t => t.status === "OPEN").length >= parseInt(botSettings.max_open_positions || "3")} 
+                        onClick={() => executeTrade("SHORT")} 
+                        className={`flex-1 py-2 flex items-center justify-center gap-2 ${botSettings.execution_mode === "live" ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.05)]"} rounded-md text-xs font-bold disabled:opacity-50 transition-all`}
+                      >
+                        <TrendingDown className="w-3.5 h-3.5" /> SHORT ${tradeUsd}
+                      </button>
+                    </>
+                  )}
                 </div>
-                {botSettings.execution_mode === "live" && (
-                  <div className="flex-1 flex flex-col gap-2 pl-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Real API (EIP-712)</span>
-                    <button 
-                      onClick={async () => { 
-                        try {
-                          addToast("Menguji koneksi API...", "info");
-                          const res = await fetch("/api/test-api", { 
-                            method: "POST", 
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                              network: botSettings.network || "testnet" 
-                            }) 
-                          }); 
-                          const data = await res.json(); 
-                          if (data.success) {
-                            addToast(data.message, "success");
-                          } else {
-                            addToast(`API Error: ${data.error || "Gagal menguji API Key"}`, "error");
-                          }
-                        } catch (e) {
-                          addToast("Koneksi API Gagal menghubungkan ke server", "error");
-                        }
-                      }} 
-                      className="py-1.5 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-600 rounded-md text-xs font-bold transition-all"
-                    >
-                      TEST API
-                    </button>
-                  </div>
+              </div>
+
+              {/* Dynamically Styled Responsive Badges located below buttons */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-slate-700/30">
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${botSettings.network === "mainnet" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-sky-500/10 text-sky-400 border-sky-500/20"}`}>
+                  {botSettings.network === "mainnet" ? "🌐 Mainnet" : "🧪 Testnet"}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-indigo-500/10 text-indigo-400 border-indigo-500/20 flex items-center gap-1">
+                  {botSettings.strategy_type === "real_strength_scalper" ? "🛡️ Real Strength Scalper" : 
+                   botSettings.strategy_type === "confirmed_fibonacci" ? "📐 Confirmed Fibonacci" : 
+                   botSettings.strategy_type === "adaptive_fib_trailing" ? "🌀 Adaptive Fibonacci Trailing" :
+                   botSettings.strategy_type === "ichimoku_ultimate" ? "🔥 Ichimoku Ultimate Pro" :
+                   botSettings.strategy_type === "rapid_scalper" ? "⚡ Rapid Scalper" :
+                   botSettings.strategy_type === "manual" ? "🖱️ Manual Execution" : 
+                   `📊 Strategy: ${botSettings.strategy_type}`}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-violet-500/10 text-violet-400 border-violet-500/20 flex items-center gap-1">
+                  ⚡ Leverage: {leverage}x
+                </span>
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 flex items-center gap-1">
+                  💵 Size: ${botSettings.max_position_size || "100"} USD
+                </span>
+                {((botSettings.strategy_type === "real_strength_scalper" && candlesCollected < 65) || 
+                  (botSettings.strategy_type === "confirmed_fibonacci" && candlesCollected < 50)) && (
+                  <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-amber-500/10 text-amber-500 border-amber-500/20 flex items-center gap-1">
+                    ⏳ Warmup: {candlesCollected}/{botSettings.strategy_type === "real_strength_scalper" ? 65 : 50}
+                  </span>
+                )}
+                {botSettings.auto_trade === "true" && (
+                  <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 animate-pulse">
+                    🤖 AUTO ACTIVE
+                  </span>
                 )}
               </div>
+            </div>
+
+            <div className="glass-panel p-4 rounded-xl flex flex-col justify-between relative overflow-hidden group col-span-1">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full blur-2xl -mr-6 -mt-6"></div>
+              <div>
+                <h3 className="text-slate-400 text-xs font-medium mb-1 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                  API Integrity
+                </h3>
+                <p className="text-[10px] text-slate-500">
+                  Status: <span className={botSettings.wallet_address ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>{botSettings.wallet_address ? "Configured" : "Not Configured"}</span>
+                </p>
+                <div className="mt-3 text-[10px] font-mono text-slate-400 truncate max-w-full">
+                  Wallet: {botSettings.wallet_address ? `${botSettings.wallet_address.slice(0, 8)}...${botSettings.wallet_address.slice(-6)}` : "None"}
+                </div>
+              </div>
+              <button 
+                onClick={async () => { 
+                  try {
+                    addToast("Menguji koneksi API...", "info");
+                    const res = await fetch("/api/test-api", { 
+                      method: "POST", 
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ 
+                        network: botSettings.network || "testnet" 
+                      }) 
+                    }); 
+                    const data = await res.json(); 
+                    if (data.success) {
+                      addToast(data.message, "success");
+                    } else {
+                      addToast(`API Error: ${data.error || "Gagal menguji API Key"}`, "error");
+                    }
+                  } catch (e) {
+                    addToast("Koneksi API Gagal menghubungkan ke server", "error");
+                  }
+                }} 
+                className="mt-4 w-full py-1.5 bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700/80 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 hover:text-indigo-400 hover:border-indigo-500/40"
+              >
+                <Zap className="w-3.5 h-3.5" /> TEST CONNECTION
+              </button>
             </div>
           </div>
 

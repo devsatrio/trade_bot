@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { 
   Settings, LayoutDashboard, BarChart3, Filter, 
   Calendar, Zap, TrendingUp, TrendingDown, RefreshCw, 
-  Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronRight, Lock, Terminal
+  Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronRight, Lock, Terminal, BookOpen
 } from "lucide-react";
 import Link from "next/link";
 
@@ -38,11 +38,67 @@ export default function AnalysisPage() {
   const fetchTrades = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/all-trades");
-      const d = await res.json();
-      if (d.success) setTrades(d.data);
-    } catch (e) {}
-    finally { setLoading(false); }
+      // 1. Fetch current settings to get wallet and network
+      const resSettings = await fetch("/api/settings", { cache: 'no-store' });
+      const settingsData = await resSettings.json();
+      
+      let walletAddress = "";
+      let network = "testnet";
+      
+      if (settingsData.success && settingsData.data) {
+        walletAddress = settingsData.data.wallet_address || "";
+        network = settingsData.data.network || "testnet";
+      }
+
+      // 2. Fetch all trades from SQLite DB
+      const resAll = await fetch("/api/all-trades");
+      const dAll = await resAll.json();
+      const dbTrades = dAll.success && Array.isArray(dAll.data) ? dAll.data : [];
+
+      // 3. Fetch live completed fills directly from Hyperliquid if wallet exists
+      let liveTrades: any[] = [];
+      if (walletAddress) {
+        try {
+          const resLive = await fetch("/api/live-trades", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userAddress: walletAddress, network })
+          });
+          const dLive = await resLive.json();
+          if (dLive.success && Array.isArray(dLive.data)) {
+            // Only aggregate CLOSED trades from the Live API
+            liveTrades = dLive.data.filter((t: any) => t.status === "CLOSED");
+          }
+        } catch (eLive) {
+          console.error("Gagal mengambil data live dari Hyperliquid:", eLive);
+        }
+      }
+
+      // 4. Merge: Keep Paper trades from SQLite and override Live trades with real HL API data
+      const paperTrades = dbTrades.filter((t: any) => (t.mode || "paper") === "paper");
+      
+      const processedLiveTrades = liveTrades.map((t: any) => ({
+        ...t,
+        mode: "live",
+        status: "CLOSED",
+        strategy: t.strategy || "-"
+      }));
+
+      const mergedTrades = [...paperTrades, ...processedLiveTrades];
+      
+      // Sort reverse chronologically
+      mergedTrades.sort((a: any, b: any) => {
+        const dateA = new Date(a.timestamp || a.closed_at || 0).getTime();
+        const dateB = new Date(b.timestamp || b.closed_at || 0).getTime();
+        return dateB - dateA;
+      });
+
+      setTrades(mergedTrades);
+    } catch (e) {
+      console.error("Gagal sinkronisasi data Halaman Analisa:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -131,6 +187,10 @@ export default function AnalysisPage() {
             <BarChart3 className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Analisa</span>}
           </div>
+          <Link href="/almanac" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden">
+            <BookOpen className="w-4 h-4 shrink-0" />
+            {isSidebarExpanded && <span className="whitespace-nowrap">Almanac</span>}
+          </Link>
           <Link href="/terminal" className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 text-sm overflow-hidden font-sans">
             <Terminal className="w-4 h-4 shrink-0" />
             {isSidebarExpanded && <span className="whitespace-nowrap">Terminal & Logs</span>}
@@ -267,7 +327,7 @@ export default function AnalysisPage() {
                     <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Size</th>
                     <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">PnL</th>
                     <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Strategi</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+                    <th className="p-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -294,7 +354,11 @@ export default function AnalysisPage() {
                           <td className="p-4">
                             <div className="flex flex-col">
                               <span className="text-[11px] font-bold text-slate-200">${trade.price.toLocaleString()}</span>
-                              {trade.close_price && <span className="text-[10px] text-slate-500">${trade.close_price.toLocaleString()}</span>}
+                              {(trade.close_price !== undefined || trade.exitPrice !== undefined) && (
+                                <span className="text-[10px] text-slate-500">
+                                  ${(trade.close_price ?? trade.exitPrice).toLocaleString()}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="p-4 text-xs font-bold text-slate-400">
@@ -313,7 +377,7 @@ export default function AnalysisPage() {
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className="text-[10px] font-bold bg-slate-700/50 px-2 py-1 rounded text-slate-300 uppercase">{trade.strategy || "Manual"}</span>
+                            <span className="text-[10px] font-bold bg-slate-700/50 px-2 py-1 rounded text-slate-300 uppercase">{trade.strategy || "-"}</span>
                           </td>
                           <td className="p-4">
                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${trade.mode === "live" ? "border-emerald-500/30 text-emerald-500" : "border-amber-500/30 text-amber-500"}`}>

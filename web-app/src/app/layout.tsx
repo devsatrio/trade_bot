@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 
 import MobileNav from "@/components/MobileNav";
+import InternetConnectionDetector from "@/components/InternetConnectionDetector";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-slate-950 text-slate-50 font-sans selection:bg-indigo-500/30">
         {children}
         <MobileNav />
+        <InternetConnectionDetector />
       </body>
     </html>
   );
